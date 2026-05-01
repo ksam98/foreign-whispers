@@ -7,8 +7,23 @@ SegmentMetrics.  The translation re-ranking function is a **student assignment**
 
 import dataclasses
 import logging
+import os
+
+from ollama import Client
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
+
+_CHARS_PER_SECOND = 15
+_OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "aya:8b")
+_ollama = Client(host=os.getenv("OLLAMA_HOST", "http://localhost:11434"))
+
+class _Candidate(BaseModel):
+    text: str
+    brevity_rationale: str
+
+class _CandidateList(BaseModel):
+    candidates: list[_Candidate]
 
 
 @dataclasses.dataclass
@@ -154,15 +169,79 @@ def get_shorter_translations(
        **Evaluation criteria**: the caller selects the candidate whose
        ``len(text) / 15.0`` is closest to ``target_duration_s``.
 
-       
+
 
     Returns:
-        Empty list (stub).  Implement to return ``TranslationCandidate`` items.
+        List of ``TranslationCandidate`` items sorted shortest first.
     """
-    logger.info(
-        "get_shorter_translations called for %.1fs budget (%d chars baseline) — "
-        "returning empty list (student assignment stub).",
-        target_duration_s,
-        len(baseline_es),
+
+    # STUDENT IMPLEMENTATION NOTE
+    #
+    # Implementation uses Ollama to run a local LLM (aya:8b) that generates shorter
+    # translation candidates fitting within the character budget.  Ollama runs as a local
+    # server on port 11434 — the Python package is an HTTP client that talks to it, so
+    # no cloud dependency or API key needed.
+    #
+    # aya:8b (Cohere) was chosen because it's purpose-built for multilingual tasks across
+    # 23+ languages, making it a better fit for translation than a general-purpose model
+    # of the same size.  At ~5GB it also fits comfortably on a MacBook Pro.
+    #
+    # I wrote the initial version of the code without the use of AI by following the docs here:
+    # https://ollama.com/docs/python-client. I used AI for prompt iteration and schema enforcement for
+    # structured output: the Ollama docs (https://github.com/ollama/ollama-python?tab=readme-ov-file#structured-outputs)
+    # show that passing format='json' only nudges the model toward JSON without enforcing
+    # any specific shape.
+    #
+    # TODO: if needed add another option of calling Claude via API for translation re-ranking
+
+    char_limit = int(target_duration_s * _CHARS_PER_SECOND)
+    targets = {
+        "minimal": char_limit,
+        "moderate": int(char_limit * 0.90),
+        "aggressive": int(char_limit * 0.75),
+    }
+
+    prompt = (
+        f"You are a professional subtitle translator. Produce shorter translations "
+        f"of the segment below that fit within a strict character budget.\n\n"
+        f"Source text: \"{source_text}\"\n"
+        f"Baseline translation: \"{baseline_es}\" ({len(baseline_es)} chars — too long)\n"
+        f"Character budget: {char_limit} characters ({target_duration_s:.1f}s × 15 chars/s)\n"
     )
-    return []
+    if context_prev:
+        prompt += f"Previous segment: \"{context_prev}\"\n"
+    if context_next:
+        prompt += f"Next segment: \"{context_next}\"\n"
+    prompt += (
+        f"\nProduce exactly 3 candidates at these target lengths:\n"
+        f"- Candidate 1: ~{targets['minimal']} characters (minimal compression, just under budget)\n"
+        f"- Candidate 2: ~{targets['moderate']} characters (moderate compression)\n"
+        f"- Candidate 3: ~{targets['aggressive']} characters (aggressive compression)\n\n"
+        "For each candidate, include a brevity_rationale field explaining what was "
+        "shortened or omitted to reach the target length (the brevity rationale must be in english)."
+    )
+
+    response = _ollama.chat(
+        model=_OLLAMA_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        format=_CandidateList.model_json_schema(),
+    )
+
+    parsed = _CandidateList.model_validate_json(response.message.content)
+    candidates = [
+        TranslationCandidate(
+            text=c.text,
+            char_count=len(c.text),
+            brevity_rationale=c.brevity_rationale,
+        )
+        for c in parsed.candidates
+    ]
+    candidates.sort(key=lambda c: c.char_count)
+
+    logger.info(
+        "get_shorter_translations: %.1fs budget (%d char limit), %d candidates returned.",
+        target_duration_s,
+        char_limit,
+        len(candidates),
+    )
+    return candidates
