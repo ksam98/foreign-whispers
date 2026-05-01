@@ -154,6 +154,8 @@ def get_shorter_translations(
        **Evaluation criteria**: the caller selects the candidate whose
        ``len(text) / 15.0`` is closest to ``target_duration_s``.
 
+       
+
     Returns:
         Empty list (stub).  Implement to return ``TranslationCandidate`` items.
     """
