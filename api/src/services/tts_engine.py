@@ -196,12 +196,17 @@ def files_from_dir(dir_path) -> list:
     return es_files
 
 
-def _synthesize_raw(tts_engine, text: str, wav_path: str) -> bytes | None:
+def _synthesize_raw(
+        tts_engine, 
+        text: str, 
+        wav_path: str, 
+        speaker_wav: str | None = None
+    ) -> bytes | None:
     """GPU-bound: call TTS engine and return raw WAV bytes, or None on failure."""
     if not text or not text.strip():
         return None
     try:
-        tts_engine.tts_to_file(text=text, file_path=wav_path)
+        tts_engine.tts_to_file(text=text, file_path=wav_path, speaker_wav=speaker_wav)
         return pathlib.Path(wav_path).read_bytes()
     except Exception as exc:
         print(f"[tts] TTS failed for segment ({exc}), using silence")
@@ -417,6 +422,33 @@ def text_file_to_speech(source_path, output_path, tts_engine=None, *, alignment=
 
     segments = segments_from_file(source_path)
 
+    speakers = list(dict.fromkeys(
+        seg["speaker"] for seg in segments if "speaker" in seg
+    ))
+
+    # "es" is hardcoded here for Notebook 4 Task 5. The WAVs under pipeline_data/speakers/es/
+    # were extracted from the Hormuz and Alysa Liu videos using ffmpeg + pyannote diarization
+    # timestamps and are present for testing only. Notebook 6 Task 3 wires this up properly
+    # via resolve_speaker_wav and a language parameter passed through the API.
+    speakers_base = pathlib.Path(__file__).parent.parent.parent.parent / "pipeline_data" / "speakers"
+    default_speaker_profile_path = speakers_base / "default.wav"
+    es_default_speaker_profile_path = speakers_base / "es" / "default.wav"
+    es_speaker_directory_path = speakers_base / "es"
+
+    speaker_wav_files = sorted(
+        p for p in es_speaker_directory_path.glob("*.wav") if p.name != "default.wav"
+    )
+
+    speaker_to_ref_wav = {}
+    if speakers:
+        for i, speaker in enumerate(speakers):
+            if speaker_wav_files:
+                speaker_to_ref_wav[speaker] = str(speaker_wav_files.pop(0))
+            elif es_default_speaker_profile_path.exists():
+                speaker_to_ref_wav[speaker] = str(es_default_speaker_profile_path)
+            else:
+                speaker_to_ref_wav[speaker] = str(default_speaker_profile_path)
+
     if not segments:
         text = text_from_file(source_path)
         save_path = pathlib.Path(output_path) / pathlib.Path(save_name)
@@ -461,6 +493,7 @@ def text_file_to_speech(source_path, output_path, tts_engine=None, *, alignment=
             "text": seg_text,
             "start": seg["start"],
             "end": seg["end"],
+            "speaker": seg.get("speaker"),
             "target_sec": target_sec,
             "stretch_factor": stretch_factor,
             "aligned_seg": aligned_seg,
@@ -475,13 +508,14 @@ def text_file_to_speech(source_path, output_path, tts_engine=None, *, alignment=
     raw_wav_map: dict[int, bytes | None] = {}
 
     with tempfile.TemporaryDirectory() as synth_dir:
-        def _do_synth(idx: int, text: str) -> tuple[int, bytes | None]:
+        def _do_synth(idx: int, text: str, speaker: str | None) -> tuple[int, bytes | None]:
             wav_path = str(pathlib.Path(synth_dir) / f"seg_{idx}.wav")
-            return idx, _synthesize_raw(engine, text, wav_path)
+            speaker_wav = speaker_to_ref_wav.get(speaker) if speaker else str(default_speaker_profile_path)
+            return idx, _synthesize_raw(engine, text, wav_path, speaker_wav=speaker_wav)
 
         with ThreadPoolExecutor(max_workers=_TTS_WORKERS) as pool:
             futures = {
-                pool.submit(_do_synth, m["index"], m["text"]): m["index"]
+                pool.submit(_do_synth, m["index"], m["text"], m["speaker"]): m["index"]
                 for m in seg_metas
             }
             for fut in as_completed(futures):
