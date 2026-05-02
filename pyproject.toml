@@ -43,29 +43,36 @@ alignment = [
 ]
 
 [tool.uv]
+environments = [
+    "sys_platform == 'darwin'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'linux' and platform_machine == 'aarch64'",
+]
 constraint-dependencies = [
     "onnxruntime<1.24",
     "numpy<2",
     "transformers<4.46",
+    "torch<2.5",
+    "torchaudio<2.5",
 ]
 find-links = [
-    "https://download.pytorch.org/whl/cu128",
+    "https://download.pytorch.org/whl/cu121",
 ]
 
 [[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
 explicit = true
 
 [tool.uv.sources]
 torch = [
-  { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
+  { index = "pytorch-cu121", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
 ]
 torchaudio = [
-  { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
+  { index = "pytorch-cu121", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
 ]
 torchvision = [
-  { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
+  { index = "pytorch-cu121", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
 ]
 
 [tool.pytest.ini_options]

@@ -63,6 +63,9 @@ services:
         USER_GID: "${GID:-1000}"
     restart: unless-stopped
     network_mode: host
+    env_file:
+      - path: .env
+        required: false
     command: ["uv", "run", "uvicorn", "api.src.main:app", "--host", "0.0.0.0", "--port", "8080"]
     environment:
       - CHATTERBOX_API_URL=http://localhost:8020
