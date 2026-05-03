@@ -510,8 +510,9 @@ def text_file_to_speech(source_path, output_path, tts_engine=None, *, alignment=
     with tempfile.TemporaryDirectory() as synth_dir:
         def _do_synth(idx: int, text: str, speaker: str | None) -> tuple[int, bytes | None]:
             wav_path = str(pathlib.Path(synth_dir) / f"seg_{idx}.wav")
-            speaker_wav = speaker_to_ref_wav.get(speaker) if speaker else str(default_speaker_profile_path)
-            return idx, _synthesize_raw(engine, text, wav_path, speaker_wav=speaker_wav)
+            spk = (speaker_to_ref_wav.get(speaker) if speaker else str(default_speaker_profile_path)) \
+                if isinstance(engine, ChatterboxClient) else None
+            return idx, _synthesize_raw(engine, text, wav_path, speaker_wav=spk)
 
         with ThreadPoolExecutor(max_workers=_TTS_WORKERS) as pool:
             futures = {
