@@ -54,13 +54,16 @@ def download_video(url, destination_folder, filename=None):
     """downloads YouTube Video (mp4) from URL, skipping if file already exists.
     If *filename* is given it is used as the stem; otherwise the YouTube title
     is used with colons and pipes stripped."""
-    vid_id, title = get_video_info(url)
-    safe_title = filename or re.sub(r'[:|]', '', title).strip()
+    if filename:
+        safe_title = filename
+    else:
+        _, title = get_video_info(url)
+        safe_title = re.sub(r'[:|]', '', title).strip()
     save_path = pathlib.Path(destination_folder) / (safe_title + ".mp4")
     if save_path.exists():
-        print(f"Skipping (already exists): {title}")
+        print(f"Skipping (already exists): {safe_title}")
         return str(save_path)
-    print(f"Downloading: {title}...", end=" ", flush=True)
+    print(f"Downloading: {safe_title}...", end=" ", flush=True)
     ydl_opts = _yt_dlp_opts(
         format="bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
         merge_output_format="mp4",
@@ -75,13 +78,17 @@ def download_caption(url, destination_folder, filename=None):
     """download english captions to <filename.txt> in destination_folder, skipping if file already exists.
     If *filename* is given it is used as the stem; otherwise the YouTube title
     is used with colons and pipes stripped."""
-    video_id, title = get_video_info(url)
-    safe_title = filename or re.sub(r'[:|]', '', title).strip()
+    if filename:
+        safe_title = filename
+        video_id = _extract_video_id(url)
+    else:
+        video_id, title = get_video_info(url)
+        safe_title = re.sub(r'[:|]', '', title).strip()
     save_path = pathlib.Path(destination_folder) / (safe_title + ".txt")
     if save_path.exists():
-        print(f"Skipping captions (already exists): {title}")
+        print(f"Skipping captions (already exists): {safe_title}")
         return str(save_path)
-    print(f"Downloading captions for {title}... ", end=" ", flush=True)
+    print(f"Downloading captions for {safe_title}... ", end=" ", flush=True)
     api = YouTubeTranscriptApi()
     caption = api.fetch(video_id).to_raw_data()
     with open(save_path, 'w') as outfile:
