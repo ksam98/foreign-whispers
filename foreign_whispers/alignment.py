@@ -304,3 +304,103 @@ def global_align(
         cumulative_drift += gap_shift
 
     return aligned
+
+
+def global_align_dp(
+    metrics:         list[SegmentMetrics],
+    silence_regions: list[dict],
+    max_stretch:     float = 1.4,
+    beam_width:      int   = 5,
+) -> list[AlignedSegment]:
+    """Beam-search global timeline alignment.
+
+    Improves on the greedy ``global_align()`` by maintaining *beam_width*
+    candidate schedules simultaneously and selecting the one with the lowest
+    total penalty at the end.  This allows silence gaps to be allocated to
+    the segments that need them most rather than the first segment that asks.
+
+    The penalty for each candidate schedule is::
+
+        Σ  overflow_s²  +  |cumulative_drift|  +  10 * (stretch > max_stretch)
+
+    where the 10x term heavily penalises severe time-stretching.
+
+    Requires ``silence_regions`` to be non-empty to show improvement over
+    the greedy baseline — without gaps there is nothing to reallocate.
+    Use inter-segment transcript gaps as a lightweight substitute for VAD output.
+
+    Args:
+        metrics: Per-segment timing metrics from ``compute_segment_metrics``.
+        silence_regions: VAD output or synthetic inter-segment gaps.
+        max_stretch: Upper bound for ``MILD_STRETCH`` speed factor.
+        beam_width: Number of candidate schedules to maintain.
+
+    Returns:
+        One ``AlignedSegment`` per input metric, in order.
+    """
+    def _best_gap(end_s: float, used: dict) -> tuple[float, int]:
+        for i, r in enumerate(silence_regions):
+            if r.get("label") == "silence" and r["start_s"] >= end_s - 0.1:
+                remaining = (r["end_s"] - r["start_s"]) - used.get(i, 0.0)
+                if remaining > 0.05:
+                    return remaining, i
+        return 0.0, -1
+
+    def _seg_penalty(action: "AlignAction", overflow: float, drift_added: float, stretch: float) -> float:
+        # drift_added = drift this segment introduces (not cumulative). Otherwise every
+        # gap_shift would be billed N times via downstream segments and beam search
+        # would never take a gap_shift. Unfixed overflow (REQUEST_SHORTER / FAIL) is
+        # the real cost to penalise heavily.
+        pen = 0.3 * abs(drift_added)
+        if stretch > max_stretch:
+            pen += 10.0
+        if action == AlignAction.REQUEST_SHORTER:
+            pen += 5.0 * overflow + 2.0
+        elif action == AlignAction.FAIL:
+            pen += 20.0 * overflow + 10.0
+        return pen
+
+    # Each beam entry: (total_penalty, cumulative_drift, segments, silence_used)
+    beam: list[tuple[float, float, list[AlignedSegment], dict]] = [
+        (0.0, 0.0, [], {})
+    ]
+
+    for m in metrics:
+        candidates = []
+
+        for tot_pen, drift, segs, sil_used in beam:
+            avail_gap, gap_idx = _best_gap(m.source_end, sil_used)
+
+            # Option A: no gap — greedy-style decision
+            action_a  = decide_action(m, available_gap_s=0.0)
+            stretch_a = min(m.predicted_stretch, max_stretch) if action_a == AlignAction.MILD_STRETCH else 1.0
+            ss_a      = m.source_start + drift
+            se_a      = ss_a + m.source_duration_s
+            pen_a     = tot_pen + _seg_penalty(action_a, m.overflow_s, 0.0, stretch_a)
+            candidates.append((pen_a, drift, segs + [AlignedSegment(
+                index=m.index, original_start=m.source_start, original_end=m.source_end,
+                scheduled_start=ss_a, scheduled_end=se_a, text=m.translated_text,
+                action=action_a, gap_shift_s=0.0, stretch_factor=stretch_a,
+            )], sil_used))
+
+            # Option B: borrow from the next silence gap (if useful)
+            if avail_gap > 0 and m.overflow_s > 0:
+                borrow    = min(m.overflow_s, avail_gap)
+                action_b  = decide_action(m, available_gap_s=borrow)
+                if action_b == AlignAction.GAP_SHIFT:
+                    new_drift = drift + borrow
+                    ss_b      = m.source_start + drift
+                    se_b      = ss_b + m.source_duration_s + borrow
+                    pen_b     = tot_pen + _seg_penalty(AlignAction.GAP_SHIFT, 0.0, borrow, 1.0)
+                    new_sil   = {**sil_used, gap_idx: sil_used.get(gap_idx, 0.0) + borrow}
+                    candidates.append((pen_b, new_drift, segs + [AlignedSegment(
+                        index=m.index, original_start=m.source_start, original_end=m.source_end,
+                        scheduled_start=ss_b, scheduled_end=se_b, text=m.translated_text,
+                        action=AlignAction.GAP_SHIFT, gap_shift_s=borrow, stretch_factor=1.0,
+                    )], new_sil))
+
+        candidates.sort(key=lambda x: x[0])
+        beam = candidates[:beam_width]
+
+    _, _, best_segs, _ = beam[0]
+    return best_segs
