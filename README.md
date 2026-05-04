@@ -4,6 +4,14 @@
 
 YouTube video dubbing pipeline — transcribe, translate, and dub 60 Minutes interviews into a target language.
 
+## Demo videos
+
+[Google Drive bundle](https://drive.google.com/drive/folders/1N2xdtu6xaJ88BD1C4GbTTrhtAGA0vmNI?usp=sharing) — three artifacts:
+
+1. Dubbed-and-aligned *Strait of Hormuz* sample (Spanish, multi-voice cloned, time-aligned)
+2. Remote pipeline execution on a Lambda Labs A100
+3. Next.js Dubbing Studio frontend running the pipeline end-to-end against the Lambda backend
+
 ## Architecture
 
 ```mermaid

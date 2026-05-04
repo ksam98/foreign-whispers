@@ -3,6 +3,12 @@
 **Author:** Samprith Kalakata
 **Course:** NYU SP26 AI Class
 **Repo:** `https://github.com/ksam98/foreign-whispers`
+**Demo videos (Google Drive):** [https://drive.google.com/drive/folders/1N2xdtu6xaJ88BD1C4GbTTrhtAGA0vmNI?usp=sharing](https://drive.google.com/drive/folders/1N2xdtu6xaJ88BD1C4GbTTrhtAGA0vmNI?usp=sharing)
+
+> The Drive link contains three artifacts:
+> 1. **Sample I/O** — the dubbed-and-aligned *Strait of Hormuz* video (Spanish, multi-voice cloned, time-aligned to source)
+> 2. **Remote execution on Lambda Labs GPU** — recording of the backend pipeline running on the A100 (Whisper, argostranslate, Chatterbox per-segment synthesis, ffmpeg stitch)
+> 3. **Frontend demo** — the Next.js Dubbing Studio at `localhost:8501` connected via SSH tunnel to the Lambda backend, running the pipeline end-to-end through the UI
 
 Foreign Whispers is an open-source video-dubbing pipeline that takes a YouTube URL and produces a dubbed version of the video in a target language with synchronized speech and captions, using only locally-running models. The system replaces the work of commercial dubbing services (e.g. ElevenLabs) with a fully reproducible Whisper + argostranslate + Chatterbox pipeline orchestrated by a FastAPI/Next.js stack.
 
