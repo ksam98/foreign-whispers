@@ -67,11 +67,27 @@ async def tts_endpoint(
             "config": config,
         }
 
-    source_path = str(trans_dir / f"{title}.json")
+    trans_path = trans_dir / f"{title}.json"
+    source_path = str(trans_path)
 
     # Auto-resolve a default reference voice when the caller didn't specify one.
     if speaker_wav is None:
         speaker_wav = resolve_speaker_wav(settings.speakers_dir, target_language)
+
+    # Per-speaker voice assignment: when the translated transcript has diarization
+    # speaker labels, map each unique speaker ID to its own reference WAV. Falls
+    # back to the language default for any speaker without a dedicated WAV.
+    speaker_map: dict[str, str] = {}
+    if trans_path.exists():
+        translated = json.loads(trans_path.read_text())
+        unique_speakers = sorted({
+            seg["speaker"] for seg in translated.get("segments", [])
+            if seg.get("speaker")
+        })
+        speaker_map = {
+            spk: resolve_speaker_wav(settings.speakers_dir, target_language, spk)
+            for spk in unique_speakers
+        }
 
     await _run_in_threadpool(
         None,
@@ -80,6 +96,7 @@ async def tts_endpoint(
         str(audio_dir),
         alignment=alignment,
         speaker_wav=speaker_wav,
+        speaker_map=speaker_map,
     )
 
     return {
@@ -87,6 +104,7 @@ async def tts_endpoint(
         "audio_path": str(wav_path),
         "config": config,
         "speaker_wav": speaker_wav,
+        "speaker_map": speaker_map,
     }
 
 
