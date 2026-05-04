@@ -17,9 +17,34 @@ class TTSService:
         self.ui_dir = ui_dir
         self.tts_engine = tts_engine
 
-    def text_file_to_speech(self, source_path: str, output_path: str, *, alignment: bool | None = None) -> None:
-        """Generate time-aligned TTS audio from a translated JSON transcript."""
-        tts_text_file_to_speech(source_path, output_path, self.tts_engine, alignment=alignment)
+    def text_file_to_speech(
+        self,
+        source_path: str,
+        output_path: str,
+        *,
+        alignment: bool | None = None,
+        speaker_wav: str | None = None,
+        speaker_map: dict[str, str] | None = None,
+    ) -> None:
+        """Generate time-aligned TTS audio from a translated JSON transcript.
+
+        Args:
+            source_path: Path to translated JSON transcript.
+            output_path: Output directory for the WAV file.
+            alignment: Override module-level alignment flag.
+            speaker_wav: Default reference WAV (relative to speakers dir) to use
+                for segments without an explicit speaker label.
+            speaker_map: Optional mapping ``{speaker_id: wav_relpath}`` used to
+                assign per-segment voices when diarization labels are present.
+        """
+        tts_text_file_to_speech(
+            source_path,
+            output_path,
+            self.tts_engine,
+            alignment=alignment,
+            speaker_wav=speaker_wav,
+            speaker_map=speaker_map,
+        )
 
     @staticmethod
     def title_for_video_id(video_id: str, search_dir: pathlib.Path) -> str | None:

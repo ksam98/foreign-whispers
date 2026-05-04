@@ -400,7 +400,15 @@ def _compute_speech_offset(source_path: str) -> float:
     return yt_start - whisper_start
 
 
-def text_file_to_speech(source_path, output_path, tts_engine=None, *, alignment=None):
+def text_file_to_speech(
+    source_path,
+    output_path,
+    tts_engine=None,
+    *,
+    alignment=None,
+    speaker_wav: str | None = None,
+    speaker_map: dict[str, str] | None = None,
+):
     """Read translated JSON with segment timestamps and produce a time-aligned WAV.
 
     Each segment is individually synthesized and time-stretched to match its
@@ -413,6 +421,14 @@ def text_file_to_speech(source_path, output_path, tts_engine=None, *, alignment=
 
     *alignment* overrides the module-level ``_ALIGNMENT_ENABLED`` flag.
     Pass True for aligned mode, False for baseline, or None to use the env var.
+
+    *speaker_wav* is the default reference WAV (relative to pipeline_data/speakers)
+    used for segments without an explicit speaker label. Falls back to the
+    legacy global default when None.
+
+    *speaker_map* maps diarization speaker IDs (e.g. ``"SPEAKER_00"``) to
+    reference WAV relative paths. When provided, replaces the hardcoded
+    Spanish speaker assignment block.
     """
     engine = tts_engine if tts_engine is not None else _get_tts_engine()
     use_alignment = alignment if alignment is not None else _ALIGNMENT_ENABLED
@@ -426,28 +442,26 @@ def text_file_to_speech(source_path, output_path, tts_engine=None, *, alignment=
         seg["speaker"] for seg in segments if "speaker" in seg
     ))
 
-    # "es" is hardcoded here for Notebook 4 Task 5. The WAVs under pipeline_data/speakers/es/
-    # were extracted from the Hormuz and Alysa Liu videos using ffmpeg + pyannote diarization
-    # timestamps and are present for testing only. Notebook 6 Task 3 wires this up properly
-    # via resolve_speaker_wav and a language parameter passed through the API.
     speakers_base = pathlib.Path(__file__).parent.parent.parent.parent / "pipeline_data" / "speakers"
-    default_speaker_profile_path = speakers_base / "default.wav"
-    es_default_speaker_profile_path = speakers_base / "es" / "default.wav"
-    es_speaker_directory_path = speakers_base / "es"
 
-    speaker_wav_files = sorted(
-        p for p in es_speaker_directory_path.glob("*.wav") if p.name != "default.wav"
+    # Default reference WAV (used for segments without a diarized speaker label).
+    # The caller passes a path relative to speakers_base (e.g. "es/default.wav");
+    # legacy callers that pass nothing get the global "default.wav".
+    default_speaker_profile_path = (
+        speakers_base / speaker_wav if speaker_wav else speakers_base / "default.wav"
     )
 
-    speaker_to_ref_wav = {}
-    if speakers:
-        for i, speaker in enumerate(speakers):
-            if speaker_wav_files:
-                speaker_to_ref_wav[speaker] = str(speaker_wav_files.pop(0))
-            elif es_default_speaker_profile_path.exists():
-                speaker_to_ref_wav[speaker] = str(es_default_speaker_profile_path)
-            else:
-                speaker_to_ref_wav[speaker] = str(default_speaker_profile_path)
+    # Per-speaker mapping: caller (router) provides the {speaker_id: wav_relpath}
+    # dict via speaker_map. Paths are resolved against speakers_base.
+    speaker_to_ref_wav: dict[str, str] = {}
+    if speaker_map:
+        for spk_id, rel_wav in speaker_map.items():
+            speaker_to_ref_wav[spk_id] = str(speakers_base / rel_wav)
+    elif speakers:
+        # Legacy fallback when caller didn't pass speaker_map but transcript
+        # has speaker labels — assign each speaker the default reference WAV.
+        for spk_id in speakers:
+            speaker_to_ref_wav[spk_id] = str(default_speaker_profile_path)
 
     if not segments:
         text = text_from_file(source_path)
