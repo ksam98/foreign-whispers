@@ -28,6 +28,15 @@ def resolve_speaker_wav(
     Returns:
         Relative path string for the Chatterbox container (e.g. "es/default.wav").
     """
-    # ---- YOUR CODE HERE ----
-    raise NotImplementedError("Implement this function")
-    # ---- END YOUR CODE ----
+    speakers_dir = Path(speakers_dir)
+
+    if speaker_id:
+        candidate = speakers_dir / target_language / f"{speaker_id}.wav"
+        if candidate.exists():
+            return f"{target_language}/{speaker_id}.wav"
+
+    lang_default = speakers_dir / target_language / "default.wav"
+    if lang_default.exists():
+        return f"{target_language}/default.wav"
+
+    return "default.wav"
