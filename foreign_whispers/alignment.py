@@ -33,12 +33,18 @@ def _count_syllables(text: str) -> int:
     return max(1, len(clusters))
 
 
-_SYLLABLE_RATE = 4.5  # syllables per second for Romance languages
-
-
 def _estimate_duration(text: str) -> float:
-    """Estimate TTS duration in seconds using a syllable-rate heuristic."""
-    return _count_syllables(text) / _SYLLABLE_RATE
+    """Estimate TTS duration in seconds.
+
+    Linear regression fit on 60 ground-truth Chatterbox TTS segments
+    (Spanish, Strait of Hormuz video). MAE 0.44s vs 1.24s for the old heuristic.
+    """
+    # Old syllable-rate heuristic (MAE 1.24s):
+    # return _count_syllables(text) / 4.5
+    syllables = _count_syllables(text)
+    words = len(text.split())
+    chars = len(text)
+    return max(0.1, 0.0648 * syllables + 0.1144 * words + 0.0266 * chars + 0.5891)
 
 
 @dataclasses.dataclass
